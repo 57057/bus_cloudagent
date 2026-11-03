@@ -1,0 +1,3 @@
+# Milvus official single-container mode: persistent local storage and embedded etcd.
+common:
+  storageType: local
