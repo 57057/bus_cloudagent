@@ -1,0 +1,16 @@
+**
+!Business.Dockerfile
+!Agent.Dockerfile
+!business.jar
+!requirements.txt
+!app/
+!app/**
+!agent/
+!agent/**
+!mock_data/
+!mock_data/**
+**/.env*
+**/__pycache__
+**/*.key
+**/*.pem
+**/*.log

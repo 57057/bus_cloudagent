@@ -61,7 +61,9 @@ async def health():
         "milvus_connected": bool(chat_service.memory and chat_service.memory.long_term.database_available),
         "long_term_memory": bool(chat_service.memory and chat_service.memory.long_term.available),
         "semantic_cache": semantic_cache_status(),
-        "document_search": "milvus" if settings.api_key_configured else "local_keywords",
+        "document_search": "milvus" if settings.api_key_configured and settings.document_search_backend == "milvus" else "published_keywords",
+        "vector_backend_enabled": settings.vector_backend_enabled,
+        "graph_backend_enabled": settings.graph_backend_enabled,
     }
 
 def semantic_cache_status():

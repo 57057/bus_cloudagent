@@ -9,6 +9,11 @@ import com.cloudagent.business.common.ApiError;
 import com.cloudagent.business.common.JsonCodec;
 import java.math.BigDecimal;
 import java.nio.file.*;
+import java.security.KeyFactory;
+import java.security.interfaces.RSAPrivateCrtKey;
+import java.security.interfaces.RSAPublicKey;
+import java.security.spec.PKCS8EncodedKeySpec;
+import java.security.spec.X509EncodedKeySpec;
 import java.util.*;
 import org.springframework.stereotype.Component;
 
@@ -37,10 +42,51 @@ public class AlipaySandboxClient {
   }
 
   public boolean configured() {
-    return !env("ALIPAY_SANDBOX_APP_ID").isBlank()
-        && !env("ALIPAY_SANDBOX_SELLER_ID").isBlank()
-        && !env("ALIPAY_PRIVATE_KEY_FILE").isBlank()
-        && !env("ALIPAY_PUBLIC_KEY_FILE").isBlank();
+    return Boolean.TRUE.equals(configurationStatus().get("ready"));
+  }
+
+  /** 只返回配置状态，不回显文件内容、路径或身份凭据，也不调用外部接口。 */
+  public Map<String, Object> configurationStatus() {
+    try {
+      require(
+          !env("ALIPAY_SANDBOX_APP_ID").isBlank() && !env("ALIPAY_SANDBOX_SELLER_ID").isBlank(),
+          503,
+          "PROVIDER_NOT_CONFIGURED",
+          "请配置支付宝沙箱应用和商户编号");
+      validateKeys(key("ALIPAY_PRIVATE_KEY_FILE"), key("ALIPAY_PUBLIC_KEY_FILE"));
+      return Map.of("ready", true, "code", "LOCAL_CHECK_PASSED", "message", "本地密钥检查通过，仍需沙箱接口验签验证");
+    } catch (ApiError e) {
+      return Map.of("ready", false, "code", e.code, "message", e.getMessage());
+    }
+  }
+
+  /** RSA2 要求有效 RSA 密钥；应用自己的公钥不能用来验证支付宝响应。 */
+  public static void validateKeys(String privateKey, String platformPublicKey) {
+    try {
+      var factory = KeyFactory.getInstance("RSA");
+      var own =
+          (RSAPrivateCrtKey)
+              factory.generatePrivate(
+                  new PKCS8EncodedKeySpec(Base64.getDecoder().decode(privateKey)));
+      var platform =
+          (RSAPublicKey)
+              factory.generatePublic(
+                  new X509EncodedKeySpec(Base64.getDecoder().decode(platformPublicKey)));
+      require(
+          own.getModulus().bitLength() >= 2048 && platform.getModulus().bitLength() >= 2048,
+          503,
+          "ALIPAY_KEY_INVALID",
+          "RSA2密钥长度需要至少2048位");
+      require(
+          !own.getModulus().equals(platform.getModulus()),
+          503,
+          "ALIPAY_WRONG_PUBLIC_KEY",
+          "支付宝公钥误填为应用公钥，请替换为沙箱平台提供的支付宝公钥");
+    } catch (ApiError e) {
+      throw e;
+    } catch (Exception e) {
+      throw new ApiError(503, "ALIPAY_KEY_INVALID", "RSA密钥格式错误，请使用PKCS8应用私钥及支付宝公钥");
+    }
   }
 
   private AlipayClient client() {

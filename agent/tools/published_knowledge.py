@@ -37,14 +37,16 @@ def chunks(data):
             for doc in data["documents"] for i in range(0, len(doc["content"]), 1000)]
 
 
-def retrieve(query):
+def retrieve(query, title_prefix=None):
     data = snapshot()  # Failure is intentionally closed: no fallback to old mock documents.
+    if title_prefix:
+        data = {**data, "documents": [d for d in data["documents"] if d["title"].startswith(title_prefix)]}
     passages = chunks(data)
     if not passages:
         return "暂无已审核、已发布且有效的知识资料，请联系运营发布文档。"
     from agent.config import get_settings
     settings = get_settings()
-    if not settings.api_key_configured:
+    if not settings.api_key_configured or getattr(settings, "document_search_backend", "milvus") == "keywords":
         words = set(re.findall(r"[a-z0-9_-]+|[\u4e00-\u9fff]{2}", query.lower()))
         ranked = sorted(passages, key=lambda d: sum(d["text"].lower().count(w) for w in words), reverse=True)
         ranked = [d for d in ranked if any(w in d["text"].lower() for w in words)][:3]
@@ -80,6 +82,6 @@ def retrieve(query):
             client.close()
     # Recheck after embedding/search so a concurrent retirement cannot enter the returned evidence.
     current = snapshot()
-    allowed = {d["id"] for d in current["documents"]}
+    allowed = {d["id"] for d in current["documents"] if not title_prefix or d["title"].startswith(title_prefix)}
     return "\n\n".join(f"【来源: {d['title']} v{d['version']} ({d['publication_id']})】\n{d['text']}"
         for d in ranked if d["publication_id"] in allowed) or "未在当前有效的发布文档中检索到相关资料。"

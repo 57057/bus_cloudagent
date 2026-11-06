@@ -1,0 +1,40 @@
+{
+    admin off
+    auto_https off
+}
+:80 {
+    handle /deployment-config.js {
+        header Content-Type application/javascript
+        respond "window.__CLOUDAGENT_DEPLOYMENT__ = {frontendOnly: true};" 200
+    }
+    @private path /api /api/* /internal /internal/* /health
+    handle @private {
+        respond "Use the encrypted administrative tunnel for business access" 403
+    }
+    handle {
+        root * /srv
+        try_files {path} /index.html
+        file_server
+    }
+}
+:8080 {
+    @runner path /internal/runner/*
+    handle @runner {
+        reverse_proxy business:5000
+    }
+    @private path /internal /internal/* /docs /docs/* /openapi.json
+    handle @private {
+        respond 404
+    }
+    @api path /api /api/* /health
+    handle @api {
+        reverse_proxy business:5000 {
+            flush_interval -1
+        }
+    }
+    handle {
+        root * /srv
+        try_files {path} /index.html
+        file_server
+    }
+}

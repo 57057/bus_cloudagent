@@ -44,6 +44,7 @@ class OrchestratorAgent:
 你的任务是根据用户的提问，决定将问题分发给哪个专业的 Agent 处理。
 
 当前可用的子 Agent 有：
+最高优先级："deployment_agent"：应用项目、部署、应用启动失败、日志、健康检查、版本回滚、应用重启和故障诊断。实例购买/租期续费仍走business_agent。
 0. "business_agent"：用户要求帮助下单、租用、续费、申请退款时，准备需用户在页面确认的结构化操作预览。查询订单和概念问答不属于此类。
 1. "product_agent" : 负责云产品介绍、资源规格说明、概念解释、操作指南等（非个人资产查询）。
 2. "billing_agent" : 负责查询用户个人的云资源实例状态、购买的机器、订单记录、账单明细等。
@@ -59,7 +60,7 @@ class OrchestratorAgent:
 【背景记忆】：
 {memory_context}
 
-请仅输出你要路由到的名称（必须是: business_agent, product_agent, billing_agent, promotion_agent, recommendation_agent, finops_agent_trigger 中的一个），不要输出任何其他解释性文字。
+请仅输出你要路由到的名称（必须是: deployment_agent, business_agent, product_agent, billing_agent, promotion_agent, recommendation_agent, finops_agent_trigger 中的一个），不要输出任何其他解释性文字。
 如果你无法判断，默认输出 product_agent。
 """
 
@@ -69,7 +70,9 @@ class OrchestratorAgent:
         ])
         
         decision = response.content.strip().lower()
-        if "business_agent" in decision:
+        if "deployment_agent" in decision:
+            next_node = "deployment_agent"
+        elif "business_agent" in decision:
             next_node = "business_agent"
         elif "finops" in decision:
             next_node = "billing_agent" # FinOps 流程的第一步是交给 Billing 去查实例

@@ -2,8 +2,6 @@ import os
 import re
 from agent.config import get_settings
 from agent.config.providers import create_chat_model
-from langchain_neo4j import Neo4jGraph
-from langchain_neo4j import GraphCypherQAChain
 from langchain_core.prompts import PromptTemplate
 from langchain_core.tools import tool
 
@@ -21,6 +19,7 @@ def _get_graph_chain():
 
     print("🔌 [Init] 正在连接 Neo4j 数据库...")
     settings = get_settings()
+    from langchain_neo4j import Neo4jGraph, GraphCypherQAChain
     graph = Neo4jGraph(
         url=settings.neo4j_uri,
         username=settings.neo4j_user,
@@ -151,6 +150,8 @@ def query_knowledge_graph(query: str) -> str:
     输入参数 query 必须是明确的自然语言查询句子。
     """
     try:
+        if not get_settings().graph_backend_enabled:
+            return "轻量演示模式未启用知识图谱，请使用已发布文档检索和平台商品查询。"
         chain = _get_graph_chain()
         result = chain.invoke({"query": query})
         return result.get('result', "未找到相关图谱信息。")

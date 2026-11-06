@@ -4,28 +4,29 @@ import re
 from pathlib import Path
 from agent.config import get_settings
 from agent.config.providers import create_embeddings
-from langchain_milvus import Milvus
-from pymilvus import connections
 from langchain_core.tools import tool
 
 # ==============================================================================
 # 修复 pymilvus 2.6.x 与 langchain-milvus 0.3.x 之间的兼容性问题
 # ==============================================================================
-original_fetch = connections._fetch_handler
-def patched_fetch(alias):
-    try:
-        return original_fetch(alias)
-    except Exception:
-        from pymilvus.client.connection_manager import ConnectionManager
-        mgr = ConnectionManager.get_instance()
-        for mc in mgr._registry.values():
-            if f"cm-{id(mc.handler)}" == alias:
-                return mc.handler
-        for mc in mgr._dedicated.values():
-            if f"cm-{id(mc.handler)}" == alias:
-                return mc.handler
-        raise
-connections._fetch_handler = patched_fetch
+def _patch_milvus_connections():
+    # 仅完整模式加载大型SDK，轻量模式不需要安装Milvus。
+    from pymilvus import connections
+    if getattr(connections, '_cloudagent_compat', False):
+        return
+    original_fetch = connections._fetch_handler
+    def patched_fetch(alias):
+        try:
+            return original_fetch(alias)
+        except Exception:
+            from pymilvus.client.connection_manager import ConnectionManager
+            mgr = ConnectionManager.get_instance()
+            for mc in list(mgr._registry.values()) + list(mgr._dedicated.values()):
+                if f"cm-{id(mc.handler)}" == alias:
+                    return mc.handler
+            raise
+    connections._fetch_handler = patched_fetch
+    connections._cloudagent_compat = True
 # ==============================================================================
 
 
@@ -57,6 +58,8 @@ def _get_milvus_store():
     if _milvus_instance is not None:
         return _milvus_instance
 
+    from langchain_milvus import Milvus
+    _patch_milvus_connections()
     settings = get_settings()
     milvus_host = settings.milvus_host
     milvus_port = settings.milvus_port
@@ -89,7 +92,7 @@ def query_vector_db(query: str) -> str:
             return published_knowledge.retrieve(query)
         except Exception:
             return "当前发布知识库暂不可用，无法确认资料；请稍后重试。"
-    if not get_settings().api_key_configured:
+    if not get_settings().api_key_configured or get_settings().document_search_backend == "keywords":
         return _query_local_documents(query)
     try:
         store = _get_milvus_store()

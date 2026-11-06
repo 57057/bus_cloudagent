@@ -49,6 +49,23 @@ def _business_call(name, arguments, user_context=""):
 # 模拟的云产品目录数据库 (基于 mock_data 真实文档)
 
 @mcp.tool()
+def list_application_projects(user_id: str = "", user_context: str = "") -> str:
+    """列出当前用户的应用项目，获取真实项目编号；不能查看其他用户。"""
+    return _business_call("list_application_projects", {}, user_context)
+
+@mcp.tool()
+def get_application_evidence(project_id: str, user_id: str = "", user_context: str = "") -> str:
+    """读取本人有效租约中项目的最近部署、健康和已采集的脱敏运行证据；没有证据不能推测。"""
+    return _business_call("get_application_evidence", {"project_id": project_id}, user_context)
+
+@mcp.tool()
+def prepare_application_action(project_id: str, kind: str, target_deployment_id: str = "",
+                               user_id: str = "", user_context: str = "") -> str:
+    """准备DEPLOY/RESTART/ROLLBACK/LOGS计划，不执行；必须由用户在网页核对后确认。"""
+    return _business_call("prepare_application_action", {"project_id": project_id,"kind": kind,
+                          "target_deployment_id": target_deployment_id or None}, user_context)
+
+@mcp.tool()
 def prepare_business_action(action: str, parameters: dict, user_id: str = "", user_context: str = "") -> str:
     """准备购买PURCHASE、续费RENEWAL或退款REFUND预览；不会下单、付款或提交退款。必须由用户在网页确认。"""
     return _business_call("prepare_business_action", {"action": action, "parameters": parameters}, user_context)

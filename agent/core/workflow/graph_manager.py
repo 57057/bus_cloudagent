@@ -15,6 +15,7 @@ from agent.agents.promotion_agent import PromotionAgentNode
 from agent.agents.recommendation_agent import RecommendationAgent
 from agent.agents.finops_agent import FinOpsAgentNode
 from agent.agents.business_agent import BusinessAgentNode
+from agent.agents.deployment_agent import DeploymentAgentNode
 
 class AgentGraphManager:
     """
@@ -29,6 +30,7 @@ class AgentGraphManager:
         self.recommendation_node = RecommendationAgent()
         self.finops_node = FinOpsAgentNode()
         self.business_node = BusinessAgentNode()
+        self.deployment_node = DeploymentAgentNode()
 
     def _route_condition(self, state: AgentState) -> str:
         """根据 Orchestrator 的决策决定走向哪个 Agent 节点。"""
@@ -56,6 +58,7 @@ class AgentGraphManager:
         builder.add_node("recommendation_agent", self.recommendation_node)
         builder.add_node("finops_agent", self.finops_node)
         builder.add_node("business_agent", self.business_node)
+        builder.add_node("deployment_agent", self.deployment_node)
 
         # 2. 定义边
         builder.add_edge(START, "orchestrator")
@@ -69,7 +72,8 @@ class AgentGraphManager:
                 "billing_agent": "billing_agent",
                 "promotion_agent": "promotion_agent",
                 "recommendation_agent": "recommendation_agent",
-                "business_agent": "business_agent"
+                "business_agent": "business_agent",
+                "deployment_agent": "deployment_agent"
             }
         )
 
@@ -90,6 +94,7 @@ class AgentGraphManager:
         builder.add_edge("recommendation_agent", END)
         builder.add_edge("finops_agent", END)
         builder.add_edge("business_agent", END)
+        builder.add_edge("deployment_agent", END)
 
         return builder.compile()
 

@@ -48,6 +48,8 @@ public class ProviderService {
         r.configs(),
         "alipay_credentials_ready",
         alipay.configured(),
+        "alipay_configuration",
+        alipay.configurationStatus(),
         "aliyun_credentials_ready",
         aliyun.configured(),
         "alipay_gateway",

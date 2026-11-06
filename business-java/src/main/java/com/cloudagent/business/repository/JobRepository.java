@@ -10,6 +10,10 @@ import org.springframework.stereotype.Repository;
  */
 @Repository
 public class JobRepository {
+  public void poolMetadata(String instance, String endpoint) {
+    s.run("UPDATE p0_instances SET public_ip=?,simulated=FALSE WHERE id=?", endpoint, instance);
+  }
+
   private final SqlExecutor s;
 
   public JobRepository(SqlExecutor s) {

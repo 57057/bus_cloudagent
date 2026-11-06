@@ -3,7 +3,7 @@
 import os
 from functools import cached_property, lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -65,6 +65,10 @@ class Settings(BaseSettings):
     
     # Logging
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
+    # 小内存演示显式关闭重型依赖；默认保持完整模式。
+    vector_backend_enabled: bool = Field(default=True, alias="VECTOR_BACKEND_ENABLED")
+    graph_backend_enabled: bool = Field(default=True, alias="GRAPH_BACKEND_ENABLED")
+    document_search_backend: Literal["milvus", "keywords"] = Field(default="milvus", alias="DOCUMENT_SEARCH_BACKEND")
     
     @field_validator("dashscope_api_key")
     @classmethod

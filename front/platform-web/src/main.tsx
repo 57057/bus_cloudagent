@@ -14,6 +14,7 @@ import {
 } from "./api";
 import "./style.css";
 import { P1UserPage, P1AdminPage, PasswordReset, ActionInbox } from "./p1";
+import { Applications,ApplicationPlanInbox } from "./applications";
 
 const names: Row = {
   PENDING_PAYMENT: "待支付",
@@ -182,7 +183,8 @@ function App() {
   const nav = [
     ["/products", "▦", "产品中心"],
     ["/orders", "▤", "我的订单"],
-    ["/instances", "▱", "资源控制台"],
+    ["/instances", "▱", "我的资源"],
+    ["/applications", "▧", "我的应用"],
     ["/refunds", "↶", "退订退款"],
     ["/tickets", "◷", "服务工单"],
     ["/notifications", "♧", "站内通知"],
@@ -197,7 +199,7 @@ function App() {
           <span className="brand-mark">☁</span> 云栈 <small>CLOUD STACK</small>
         </a>
         <div className="workspace">
-          个人云工作台 <span>LOCAL</span>
+          个人云工作台 <span>{window.__CLOUDAGENT_DEPLOYMENT__?.environmentLabel||'工作台'}</span>
         </div>
         <nav>
           {nav.map(([href, icon, title]) => (
@@ -210,6 +212,7 @@ function App() {
               {title}
             </a>
           ))}
+          {user?.role === 'ADMIN' && <a href="#/admin/hosts">▧ 平台资源池</a>}
           {staff && (
             <a
               className={path.startsWith("/admin") ? "active" : ""}
@@ -220,7 +223,7 @@ function App() {
           )}
         </nav>
         <div className="sidebar-foot">
-          <span className="dot" /> 模拟环境<p>不产生真实扣款或云资源</p>
+            <span className="dot" /> {window.__CLOUDAGENT_DEPLOYMENT__?.environmentLabel || (window.__CLOUDAGENT_DEPLOYMENT__?.frontendOnly ? '云端前端预览' : '本地验收环境')}<p>模拟 / 沙箱支付 · 不采购云资源</p>
         </div>
       </aside>
       <main>
@@ -254,8 +257,7 @@ function App() {
           </div>
         </div>
         <div className="demo-strip">
-          演示环境 ·
-          所有支付与实例均为模拟。订单、库存、异步任务及售后状态由真实业务数据库保存。
+            {window.__CLOUDAGENT_DEPLOYMENT__?.frontendOnly ? '云端前端预览 · 业务后端尚未接入，登录、下单和AI服务暂不可用。' : window.__CLOUDAGENT_DEPLOYMENT__?.notice || '本地验收环境 · 支持模拟与支付宝沙箱支付。实例按记录区分模拟资源和平台本地Linux资源，不创建阿里云收费实例。'}
         </div>
         <div className="page">
           {!ready ? (
@@ -281,6 +283,10 @@ function App() {
             <Chat ctx={ctx} />
           ) : path === "/profile" ? (
             <Profile ctx={ctx} update={setUser} />
+          ) : path === "/applications" ? (
+            <Applications ctx={ctx} />
+          ) : path === "/admin/hosts" && user?.role === 'ADMIN' ? (
+            <Applications ctx={ctx} admin />
           ) : path === "/services" ? (
             <P1UserPage ctx={ctx} />
           ) : path === "/admin/p1" && staff ? (
@@ -1190,15 +1196,15 @@ function Instances({ ctx }: { ctx: Context }) {
   return (
     <>
       <Heading
-        title="资源控制台"
-        description="管理实例运行状态、租期和操作任务。所有实例与网络地址均为模拟。"
+        title="我的资源"
+        description="租用资源后，前往“我的应用”创建网站并部署。停止应用保留资源；释放资源会结束租约并清理应用。"
       />
       <ErrorBox error={error} />
       <div className="panel">
         {!data ? (
           <Loading />
         ) : !data.items.length ? (
-          <Empty text="还没有云服务器，去产品中心选配一台吧" />
+          <Empty text="还没有可用资源，先到产品中心选择一个应用部署套餐吧" />
         ) : (
           <>
             <div className="table-scroll">
@@ -1217,7 +1223,7 @@ function Instances({ ctx }: { ctx: Context }) {
                     <tr key={i.id}>
                       <td>
                         <strong>{i.name}</strong>
-                        <small>{i.id.slice(0, 12)} · 模拟实例</small>
+                        <small>{i.id.slice(0, 12)} · {i.simulated ? '模拟实例' : '平台资源池实例'}</small>
                       </td>
                       <td>
                         <Badge value={i.state} />
@@ -1226,12 +1232,13 @@ function Instances({ ctx }: { ctx: Context }) {
                         {i.public_ip}
                         <small>
                           {parse(i.config).disk_gb}GB /{" "}
-                          {parse(i.config).bandwidth}Mbps · 模拟地址
+                          {parse(i.config).bandwidth}Mbps · {i.simulated?'模拟地址':'平台管理的应用资源'}
                         </small>
                       </td>
                       <td>{date(i.expires_at)}</td>
                       <td>
                         <div className="actions">
+                          {!i.simulated&&i.state==='RUNNING'&&<a className="button secondary" href="#/applications">部署 / 查看应用</a>}
                           <button
                             className="secondary"
                             onClick={() => setSelected(i.id)}
@@ -1271,7 +1278,7 @@ function Instances({ ctx }: { ctx: Context }) {
                                     if (
                                       action === "RELEASE" &&
                                       !confirm(
-                                        "释放后模拟资源与数据不可恢复，且不会自动退款。确定释放？",
+                                        "释放将结束此资源租约并清理已部署应用，且不会自动退款。确定释放？",
                                       )
                                     )
                                       return;
@@ -2066,6 +2073,7 @@ function Chat({ ctx }: { ctx: Context }) {
         </div>
       </div>
       <ActionInbox ctx={ctx} />
+      <ApplicationPlanInbox ctx={ctx} />
     </>
   );
 }

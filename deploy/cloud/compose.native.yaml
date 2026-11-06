@@ -1,0 +1,11 @@
+# Optional 2GB demo: MySQL 8.4 installed from the Ubuntu repository on the same host.
+# Host DB binds only to docker0. Activate with COMPOSE_FILE=compose.yaml:compose.native.yaml.
+services:
+  mysql:
+    profiles: [container-db]
+  business:
+    depends_on: !reset []
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    environment:
+      MYSQL_HOST: host.docker.internal
+      SPRING_DATASOURCE_URL: jdbc:mysql://host.docker.internal:3306/cloud_platform?useUnicode=true&characterEncoding=UTF-8&serverTimezone=UTC&useSSL=false&allowPublicKeyRetrieval=true

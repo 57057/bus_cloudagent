@@ -1,0 +1,12 @@
+{
+    admin off
+    auto_https off
+    default_sni 121.43.82.247
+    servers {
+        protocols h1 h2
+    }
+}
+https://121.43.82.247 {
+    tls /certs/live/video-two-ip/fullchain.pem /certs/live/video-two-ip/privkey.pem
+    reverse_proxy 127.0.0.1:8787
+}

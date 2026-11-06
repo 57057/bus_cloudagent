@@ -53,8 +53,9 @@ public class CatalogSearchRepository {
         s.list(
             "SELECT p.*, (SELECT MIN(base_cents+min_disk*disk_cents+bandwidth_cents) FROM p0_skus s"
                 + " WHERE s.product_id=p.id AND s.active=TRUE) AS price_cents, EXISTS(SELECT 1 FROM"
-                + " p0_skus s WHERE s.product_id=p.id AND s.active=TRUE AND s.adapter='SIMULATED'"
-                + " AND p.category IN ('ECS','GPU','RDS','DISK')) AS purchasable FROM p0_products p"
+                + " p0_skus s WHERE s.product_id=p.id AND s.active=TRUE AND s.adapter IN"
+                + " ('SIMULATED','POOL') AND p.category IN ('ECS','GPU','RDS','DISK')) AS"
+                + " purchasable FROM p0_products p"
                 + where
                 + " ORDER BY "
                 + order

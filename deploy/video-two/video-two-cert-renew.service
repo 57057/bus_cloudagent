@@ -1,0 +1,10 @@
+[Unit]
+Description=Renew Video Two public IP certificate
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/video-two-tools/certbot/bin/certbot renew --non-interactive --no-random-sleep-on-renew --config-dir /etc/letsencrypt-video-two --work-dir /var/lib/video-two-acme --logs-dir /var/log/video-two-acme --quiet --deploy-hook /opt/video-two-tools/reload-proxy.sh
+MemoryMax=256M
+CPUQuota=50%

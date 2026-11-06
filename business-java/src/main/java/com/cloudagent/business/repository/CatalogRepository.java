@@ -117,6 +117,15 @@ public class CatalogRepository {
     return products.selectById(id);
   }
 
+  public void refreshPoolCapacity(String id) {
+    s.run(
+        "UPDATE p0_skus SET capacity=reserved+allocated+(SELECT COUNT(*) FROM app_hosts WHERE"
+            + " sku_id=? AND pool_state='IDLE' AND last_seen_at>DATE_SUB(UTC_TIMESTAMP(3),INTERVAL"
+            + " 90 SECOND)) WHERE id=?",
+        id,
+        id);
+  }
+
   public int insertProduct(PlatformProduct product) {
     return products.insert(product);
   }

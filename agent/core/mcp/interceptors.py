@@ -12,7 +12,7 @@ class UserIdInjector(ToolCallInterceptor):
     ) -> MCPToolCallResult:
 
         # 尝试从 LangGraph 的 runtime config 中获取系统级 user_id
-        if request.name not in {"query_user_orders", "query_user_instances", "analyze_instance_usage", "get_promotion_materials", "search_product_catalog", "get_promotable_products", "prepare_business_action"}:
+        if request.name not in {"query_user_orders", "query_user_instances", "analyze_instance_usage", "get_promotion_materials", "search_product_catalog", "get_promotable_products", "prepare_business_action", "list_application_projects", "get_application_evidence", "prepare_application_action"}:
             return await handler(request)
         user_id = None
         user_context = ""

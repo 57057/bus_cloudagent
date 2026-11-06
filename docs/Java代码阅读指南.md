@@ -282,3 +282,17 @@ s.one("SELECT * FROM p0_orders WHERE id=? AND user_id=?", id, user);
 5. 最后对照 `tests/p0_acceptance.py`等本地验收脚本，理解预期行为与边界。它们是教师实现/验证证据，不代表你已经能独立实现同样系统。
 
 构建包含 ArchitectureTest 分层约束与Service测试；交易回归使用本地模拟环境验收脚本，测试记录保留在数据库中。Python Agent与模型协议保持原有接口。
+
+## 13. 商品查询的 Redis 缓存
+
+阅读 CatalogService.products/product/regions，再看 integration/CatalogCache.read：缓存命中返回 JSON，未命中才执行传入的 Repository 查询。skus/available 和交易流程仍实时查 MySQL。商品或 SKU 修改由 Service 注册 afterCommit 回调，提交后切换 Redis 版本；回滚不执行。配置、降级和测试见 [Redis业务缓存](Redis业务缓存.md)。
+
+## 14. 平台实例池与应用部署
+
+先读ApplicationController → ApplicationService → ApplicationRepository，再读PoolService/PoolRepository和PoolResourceAdapter。TradeService在订单事务中预留具体池实例；原JobService通过适配器完成交付与资源操作。物理资产ID与每次租约的业务交付ID不同，避免第二次出租触发旧表唯一约束。
+
+应用执行走RunnerController和独立deployment-runner/runner.py。计划确认、租约和generation由Java验证；Runner只执行批准的模板，SQLite保存外部执行回执。JobService遇到POOL_ACTION_PENDING时在当前事务提交Runner任务并延期原任务，不把执行意图随异常回滚，也不消耗失败重试次数。
+
+ApplicationSecretVault只负责加密与本地密钥文件；Service负责密钥归属、配置版本和执行时下发。Python DeploymentAgentNode只能准备计划，不能调用网页确认接口。普通页面与聊天使用同一套Java权限和业务规则。
+
+运行入口、验证证据和外部边界见[应用部署平台交付说明](应用部署平台-本地交付与验收.md)。

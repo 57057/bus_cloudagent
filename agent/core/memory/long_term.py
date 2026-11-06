@@ -61,6 +61,9 @@ class LongTermMemory:
         Sets _available=False on failure (no exception raised).
         """
         try:
+            if not get_settings().vector_backend_enabled:
+                logger.info("Long-term vector memory explicitly disabled")
+                return
             from pymilvus import MilvusClient  # type: ignore[import]
 
             uri = f"http://{self._host}:{self._port}"

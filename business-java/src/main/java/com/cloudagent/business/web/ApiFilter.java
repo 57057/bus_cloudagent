@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.util.*;
 import org.slf4j.MDC;
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
@@ -21,12 +22,28 @@ public class ApiFilter extends OncePerRequestFilter {
   private final JsonCodec json;
 
   private final AuthService auth;
+  private final Set<String> allowedOrigins;
 
   /** 构造器：由Spring传入所需依赖，再保存为本对象的字段；Controller/Service通常不需要在业务代码中手动new。 */
-  public ApiFilter(AuthService auth, JsonCodec json) {
+  public ApiFilter(AuthService auth, JsonCodec json,
+      @Value("${platform.allowed-origins}") String origins) {
     this.json = json;
 
     this.auth = auth;
+    // 明确配置浏览器入口；不根据客户端可伪造的Host/转发头自动信任来源。
+    this.allowedOrigins = new HashSet<>();
+    for (String origin : origins.split(",")) {
+      String value = origin.strip();
+      if (value.isEmpty()) continue;
+      java.net.URI uri = java.net.URI.create(value);
+      if (!(Set.of("https", "http").contains(Objects.toString(uri.getScheme(), "")))
+          || uri.getHost() == null || uri.getRawUserInfo() != null
+          || (uri.getRawPath() != null && !uri.getRawPath().isEmpty())
+          || uri.getRawQuery() != null || uri.getRawFragment() != null) {
+        throw new IllegalArgumentException("Allowed origin must be an exact HTTP(S) origin");
+      }
+      allowedOrigins.add(value);
+    }
   }
 
   /** 从当前 HTTP 请求属性读取过滤器认证结果；不会重新读取请求体中的用户编号。 */
@@ -66,12 +83,7 @@ public class ApiFilter extends OncePerRequestFilter {
       // Origin名单用于浏览器跨站访问控制，不是服务认证；没有Origin头的非浏览器请求仍须走令牌/渠道签名校验。
       if (origin != null) {
         ApiError.require(
-            Set.of(
-                    "http://127.0.0.1:5173",
-                    "http://localhost:5173",
-                    "http://127.0.0.1:5174",
-                    "http://localhost:5174")
-                .contains(origin),
+            allowedOrigins.contains(origin),
             403,
             "ORIGIN_DENIED",
             "来源不受信任");

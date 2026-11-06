@@ -13,6 +13,14 @@ import org.springframework.stereotype.Component;
 /** 阿里云固定 API 适配：ECS 只执行 RunInstances DryRun 预检，短信使用已配置的审核模板。没有任意域名/Action代理。 */
 @Component
 public class AliyunClient {
+  public Map<String,Object> windowsAsset(String region,String instance){
+    var result=call("ecs.aliyuncs.com","2014-05-26","DescribeInstances",region,Map.of("RegionId",region,"InstanceIds",json.json(List.of(instance))));
+    require(result.get("Instances") instanceof Map,404,"CLOUD_HOST_NOT_FOUND","云实例不存在");
+    var wrapper=(Map<?,?>)result.get("Instances");var rows=(List<?>)wrapper.get("Instance");
+    require(rows!=null && rows.size()==1,404,"CLOUD_HOST_NOT_FOUND","云实例不存在");var host=(Map<?,?>)rows.get(0);
+    require("windows".equalsIgnoreCase(Objects.toString(host.get("OSType"),"")) && "Running".equals(host.get("Status")),409,"WINDOWS_HOST_REQUIRED","需要运行中的Windows ECS");
+    return Map.of("instance_id",instance,"os","WINDOWS","status","Running");
+  }
   private final JsonCodec json;
 
   public AliyunClient(JsonCodec json) {
@@ -51,8 +59,27 @@ public class AliyunClient {
     } catch (com.aliyuncs.exceptions.ClientException e) {
       if (action.equals("RunInstances") && "DryRunOperation".equals(e.getErrCode()))
         return Map.of("checked", true, "created", false, "mode", "DRY_RUN");
-      throw new ApiError(502, "ALIYUN_REQUEST_FAILED", "阿里云请求未通过，请检查权限、配额和配置；未创建资源");
+      throw requestFailure(e.getErrCode());
     }
+  }
+
+  /** 供应商原始报文可能携带身份/请求细节，只映射白名单错误，不向页面或日志透传原文。 */
+  public static ApiError requestFailure(String code) {
+    if ("InvalidAccountStatus.NotEnoughBalance".equals(code)
+        || "Account.Arrearage".equals(code)
+        || "InsufficientBalance".equals(code))
+      return new ApiError(502, "ALIYUN_ACCOUNT_BALANCE", "阿里云账户余额不足或存在欠费，预检未通过；未创建资源");
+    if ("Forbidden.RAM".equals(code) || "Forbidden.NoPermission".equals(code))
+      return new ApiError(502, "ALIYUN_PERMISSION_DENIED", "RAM用户缺少接口或资源权限，预检未通过；未创建资源");
+    if (code != null
+        && (code.startsWith("InvalidParameter")
+            || code.startsWith("InvalidZoneId")
+            || code.startsWith("InvalidVSwitchId")
+            || code.startsWith("InvalidSecurityGroupId")
+            || code.startsWith("InvalidImageId")
+            || code.startsWith("InvalidInstanceType")))
+      return new ApiError(502, "ALIYUN_RESOURCE_CONFIG", "地域、可用区、规格、镜像或网络配置不匹配，请检查资源映射；未创建资源");
+    return new ApiError(502, "ALIYUN_REQUEST_FAILED", "阿里云请求未通过，请检查权限、配额和配置；未创建资源");
   }
 
   public Object dryRun(Map<String, String> settings, String token) {
@@ -99,5 +126,47 @@ public class AliyunClient {
                 "TemplateParam",
                 json.json(otp ? Map.of("code", matcher.group(1)) : Map.of("content", text))));
     require("OK".equals(result.get("Code")), 502, "SMS_REJECTED", "短信未确认成功");
+  }
+
+  /** 只读发现，不自动纳管、不自动出售、不改变资源状态；结果去除云端登录及网络敏感配置。 */
+  public Object inventory(String region) {
+    var response =
+        call(
+            "ecs.aliyuncs.com",
+            "2014-05-26",
+            "DescribeInstances",
+            region,
+            Map.of("RegionId", region, "PageSize", "50", "PageNumber", "1"));
+    var items = new ArrayList<Map<String, Object>>();
+    if (response.get("Instances") instanceof Map<?, ?> wrapper
+        && wrapper.get("Instance") instanceof List<?> instances) {
+      for (Object raw : instances)
+        if (raw instanceof Map<?, ?> source) {
+          Map<String, Object> item = new LinkedHashMap<>();
+          for (String field :
+              List.of(
+                  "InstanceId",
+                  "InstanceName",
+                  "InstanceType",
+                  "Status",
+                  "Cpu",
+                  "Memory",
+                  "ExpiredTime",
+                  "InstanceChargeType",
+                  "ZoneId")) if (source.get(field) != null) item.put(field, source.get(field));
+          items.add(item);
+        }
+    }
+    return Map.of(
+        "items",
+        items,
+        "total",
+        response.getOrDefault("TotalCount", items.size()),
+        "page_size",
+        50,
+        "read_only",
+        true,
+        "notice",
+        "仅展示首50台；未纳管、未创建或修改任何资源");
   }
 }

@@ -1,0 +1,113 @@
+name: cloudagent-lite
+x-logging: &logging
+  driver: json-file
+  options: {max-size: "5m", max-file: "2"}
+services:
+  gateway:
+    image: caddy:2.10.2-alpine
+    restart: unless-stopped
+    mem_limit: 48m
+    ports: ["80:80", "127.0.0.1:8080:8080"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./site:/srv:ro
+    depends_on: [business]
+    logging: *logging
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    mem_limit: 384m
+    memswap_limit: 768m
+    command: ["--innodb-buffer-pool-size=64M", "--innodb-log-buffer-size=8M", "--innodb-redo-log-capacity=64M", "--max-connections=20", "--performance-schema=OFF", "--mysqlx=OFF", "--table-open-cache=128"]
+    environment:
+      MYSQL_DATABASE: cloud_platform
+      MYSQL_USER: cloudagent
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?}
+    volumes: [mysql_data:/var/lib/mysql]
+    networks: [data]
+    healthcheck:
+      test: [CMD-SHELL, 'MYSQL_PWD="$$MYSQL_PASSWORD" mysql -h 127.0.0.1 -u cloudagent cloud_platform -Nse "SELECT 1" >/dev/null']
+      interval: 15s
+      timeout: 8s
+      retries: 30
+      start_period: 60s
+    logging: *logging
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    mem_limit: 64m
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?}
+    command: [sh, -c, 'exec redis-server --appendonly yes --maxmemory 32mb --maxmemory-policy allkeys-lru --requirepass "$$REDIS_PASSWORD"']
+    volumes: [redis_data:/data]
+    networks: [data]
+    logging: *logging
+  business:
+    image: cloudagent-business:lite
+    build: {context: ., dockerfile: Business.Dockerfile}
+    restart: unless-stopped
+    mem_limit: 384m
+    memswap_limit: 640m
+    cpus: 1.0
+    environment:
+      SERVER_ADDRESS: 0.0.0.0
+      BUSINESS_PORT: "5000"
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
+      MYSQL_DATABASE: cloud_platform
+      MYSQL_USER: cloudagent
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?}
+      REDIS_HOST: redis
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/cloud_platform?useUnicode=true&characterEncoding=UTF-8&serverTimezone=UTC&useSSL=false&allowPublicKeyRetrieval=true
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?}
+      BUSINESS_SERVICE_TOKEN: ${BUSINESS_SERVICE_TOKEN:?}
+      AGENT_BASE_URL: http://agent:5001
+      PLATFORM_ALLOWED_ORIGINS: http://127.0.0.1:18780,http://localhost:18780
+      PLATFORM_SECURE_COOKIE: "false"
+      PLATFORM_DEMO: "false"
+      PLATFORM_SHARED_DEMO: "true"
+      PLATFORM_ADMIN_USER: ${PLATFORM_ADMIN_USER:?}
+      PLATFORM_ADMIN_PASSWORD: ${PLATFORM_ADMIN_PASSWORD:?}
+      APPLICATION_KEY_FILE: /run/secrets/application.key
+      P1_DELIVERY_MODE: LOCAL
+      SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: "4"
+      SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE: "1"
+      SERVER_TOMCAT_THREADS_MAX: "20"
+      SERVER_TOMCAT_THREADS_MIN_SPARE: "2"
+      JAVA_TOOL_OPTIONS: -Xms64m -Xmx160m -XX:MaxMetaspaceSize=128m -XX:ReservedCodeCacheSize=32m -XX:MaxDirectMemorySize=16m -Xss256k -XX:ActiveProcessorCount=1 -Duser.timezone=UTC
+      ALIPAY_SANDBOX_APP_ID: ${ALIPAY_SANDBOX_APP_ID:-}
+      ALIPAY_SANDBOX_SELLER_ID: ${ALIPAY_SANDBOX_SELLER_ID:-}
+      ALIPAY_PRIVATE_KEY_FILE: /run/secrets/alipay-private.pem
+      ALIPAY_PUBLIC_KEY_FILE: /run/secrets/alipay-public.pem
+    volumes: ["./secrets:/run/secrets:ro"]
+    networks: [default, data]
+    depends_on:
+      mysql: {condition: service_healthy}
+    logging: *logging
+  agent:
+    image: cloudagent-agent:lite
+    build: {context: ., dockerfile: Agent.Dockerfile}
+    restart: unless-stopped
+    mem_limit: 512m
+    memswap_limit: 768m
+    cpus: 0.75
+    environment:
+      BUSINESS_BASE_URL: http://business:5000
+      BUSINESS_SERVICE_TOKEN: ${BUSINESS_SERVICE_TOKEN:?}
+      REDIS_URL: redis://:${REDIS_PASSWORD:?}@redis:6379/1
+      SILICONFLOW_API_KEY: ${SILICONFLOW_API_KEY:?}
+      MODEL: ${MODEL:-deepseek-ai/DeepSeek-V3.2}
+      BASE_URL: https://api.siliconflow.cn/v1
+      VECTOR_BACKEND_ENABLED: "false"
+      GRAPH_BACKEND_ENABLED: "false"
+      DOCUMENT_SEARCH_BACKEND: keywords
+      PYTHONUNBUFFERED: "1"
+    networks: [default, data]
+    depends_on: [business, redis]
+    logging: *logging
+networks:
+  data: {internal: true}
+volumes:
+  mysql_data:
+  redis_data:

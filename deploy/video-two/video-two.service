@@ -1,0 +1,34 @@
+[Unit]
+Description=Video Two WebSocket room synchronization
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=video-two
+Group=video-two
+WorkingDirectory=/opt/video-two/current
+Environment=HOST=127.0.0.1
+Environment=PORT=8787
+Environment=NODE_OPTIONS=--max-old-space-size=48
+ExecStart=/usr/bin/node server/index.js
+Restart=on-failure
+RestartSec=5
+MemoryMax=128M
+MemorySwapMax=32M
+CPUQuota=20%
+TasksMax=48
+LimitNOFILE=1024
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

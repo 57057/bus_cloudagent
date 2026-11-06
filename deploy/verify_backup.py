@@ -25,6 +25,12 @@ def main():
     manifest=json.loads((folder/'manifest.json').read_text())
     dump=folder/'business.sql'
     assert hashlib.sha256(dump.read_bytes()).hexdigest()==manifest['sha256'], 'Backup checksum mismatch'
+    if manifest.get('application_key_sha256'):
+        from dotenv import dotenv_values
+        key_setting=os.getenv('APPLICATION_KEY_FILE') or dotenv_values(ROOT/'business-java/.env').get('APPLICATION_KEY_FILE') or 'runtime/application-secret.key'
+        key_path=Path(key_setting)
+        if not key_path.is_absolute():key_path=ROOT/key_path
+        assert key_path.exists() and hashlib.sha256(key_path.read_bytes()).hexdigest()==manifest['application_key_sha256'], 'Restore requires the separately protected original application encryption key'
     from agent.config import get_settings
     import pymysql
     s=get_settings()

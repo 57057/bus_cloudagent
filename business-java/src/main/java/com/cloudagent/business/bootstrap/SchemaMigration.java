@@ -107,6 +107,47 @@ public class SchemaMigration implements InitializingBean {
           s.run("INSERT INTO p0_schema_history VALUES(3,?,?)", thirdChecksum, Values.now());
         } else if (!thirdChecksum.equals(thirdApplied.get(0).get("checksum")))
           throw new IllegalStateException("Applied migration checksum changed: 3");
+        var fourth = new ClassPathResource("db/V004__application_platform.sql");
+        String checksum4 =
+            HexFormat.of()
+                .formatHex(
+                    MessageDigest.getInstance("SHA-256").digest(fourth.getContentAsByteArray()));
+        var applied4 = s.list("SELECT checksum FROM p0_schema_history WHERE version=4");
+        if (applied4.isEmpty()) {
+          ScriptUtils.executeSqlScript(c, fourth);
+          s.run("INSERT INTO p0_schema_history VALUES(4,?,?)", checksum4, Values.now());
+        } else if (!checksum4.equals(applied4.get(0).get("checksum")))
+          throw new IllegalStateException("Applied migration checksum changed: 4");
+        var fifth = new ClassPathResource("db/V005__application_configs.sql");
+        String checksum5 =
+            HexFormat.of()
+                .formatHex(
+                    MessageDigest.getInstance("SHA-256").digest(fifth.getContentAsByteArray()));
+        var applied5 = s.list("SELECT checksum FROM p0_schema_history WHERE version=5");
+        if (applied5.isEmpty()) {
+          ScriptUtils.executeSqlScript(c, fifth);
+          s.run("INSERT INTO p0_schema_history VALUES(5,?,?)", checksum5, Values.now());
+        } else if (!checksum5.equals(applied5.get(0).get("checksum")))
+          throw new IllegalStateException("Applied migration checksum changed: 5");
+        var sixth = new ClassPathResource("db/V006__pool_finance.sql");
+        String checksum6 =
+            HexFormat.of()
+                .formatHex(
+                    MessageDigest.getInstance("SHA-256").digest(sixth.getContentAsByteArray()));
+        var applied6 = s.list("SELECT checksum FROM p0_schema_history WHERE version=6");
+        if (applied6.isEmpty()) {
+          ScriptUtils.executeSqlScript(c, sixth);
+          s.run("INSERT INTO p0_schema_history VALUES(6,?,?)", checksum6, Values.now());
+        } else if (!checksum6.equals(applied6.get(0).get("checksum")))
+          throw new IllegalStateException("Applied migration checksum changed: 6");
+        var seventh = new ClassPathResource("db/V007__application_controls.sql");
+        String checksum7 = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(seventh.getContentAsByteArray()));
+        var applied7 = s.list("SELECT checksum FROM p0_schema_history WHERE version=7");
+        if (applied7.isEmpty()) {
+          ScriptUtils.executeSqlScript(c, seventh);
+          s.run("INSERT INTO p0_schema_history VALUES(7,?,?)", checksum7, Values.now());
+        } else if (!checksum7.equals(applied7.get(0).get("checksum")))
+          throw new IllegalStateException("Applied migration checksum changed: 7");
       } finally {
         try (var st = c.createStatement()) {
           st.execute("SELECT RELEASE_LOCK('cloud_platform_schema')");

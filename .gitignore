@@ -1,6 +1,9 @@
 # 本地运行数据、数据库、凭据、备份和下载的工具均放在这里。
 /runtime/
 
+# 本机使用的服务器运维 skill，不随项目上传。
+/skills/ecs-project-ops/
+
 # Python 虚拟环境、字节码、构建和测试缓存。
 .venv/
 venv/

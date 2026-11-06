@@ -1,0 +1,33 @@
+[Unit]
+Description=CloudAgent dedicated application executor
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+User=cloudagent-runner
+Group=cloudagent-runner
+SupplementaryGroups=docker
+WorkingDirectory=/var/lib/cloudagent-runner
+ExecStart=/usr/bin/python3 /opt/cloudagent-runner/runner.py --root /var/lib/cloudagent-runner --config /var/lib/cloudagent-runner/bootstrap.json
+Restart=on-failure
+RestartSec=10
+MemoryHigh=80M
+MemoryMax=128M
+MemorySwapMax=64M
+CPUQuota=20%
+TasksMax=48
+OOMScoreAdjust=500
+OOMPolicy=stop
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/cloudagent-runner
+PrivateTmp=true
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

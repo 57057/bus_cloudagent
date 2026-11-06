@@ -22,6 +22,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  */
 @org.springframework.stereotype.Service
 public class JobService {
+  @org.springframework.beans.factory.annotation.Autowired private PoolService pool;
   private final JsonCodec json;
   private final BusinessEvents events;
 
@@ -105,8 +106,16 @@ public class JobService {
           status -> {
             var row = repository.lockWork(table, id);
             if (!text(row, "state").equals("RUNNING")) return;
-            if (table.equals("outbox")) outbox(row);
-            else task(row);
+            try {
+              if (table.equals("outbox")) outbox(row);
+              else task(row);
+            } catch (ApiError pending) {
+              if (!pending.code.equals("POOL_ACTION_PENDING")) throw pending;
+              // Runner任务与延期状态同事务提交；不能把待执行意图随异常一起回滚。
+              repository.recordWorkFailure(
+                  table, "PENDING", row.get("attempts"), time(Instant.now().plusSeconds(5)), id);
+              return;
+            }
             repository.markWorkSucceeded(table, id);
           });
       // 前一个executeWithoutResult抛错时已回滚；用下一段事务记录失败，避免失败计数也一起被回滚掉。
@@ -212,13 +221,19 @@ public class JobService {
         provider.get("updated_at"),
         provider.get("expires_at"),
         snapshot.get("grace_days"));
+    if (pool.supports(instance)) repository.poolMetadata(instance, text(provider, "endpoint"));
+    require(
+        text(repository.lockInstance(instance), "user_id").equals(text(o, "user_id")),
+        409,
+        "INSTANCE_DELIVERY_CONFLICT",
+        "实例交付记录与订单不一致");
     repository.markItemSucceeded(item.get("id"));
     finishOrder(o);
     events.notice(
         "provision:" + instance,
         text(o, "user_id"),
-        "模拟实例开通成功",
-        "实例：" + instance + "；模拟地址不能用于真实登录");
+        pool.supports(instance) ? "平台实例分配成功" : "模拟实例开通成功",
+        "实例：" + instance + (pool.supports(instance) ? "；请在应用部署页面创建项目" : "；模拟地址不能用于真实登录"));
     events.audit("WORKER", "SIMULATED_PROVISION", instance, "供应商幂等号：" + instance);
   }
 
@@ -306,7 +321,7 @@ public class JobService {
     if (!text(r, "state").equals("RELEASED")) {
       repository.markInstanceReleased(r.get("id"));
       require(
-          repository.releaseAllocatedStock(r.get("sku_id")) == 1,
+          pool.supports(text(r, "id")) || repository.releaseAllocatedStock(r.get("sku_id")) == 1,
           409,
           "INVENTORY_CONFLICT",
           "已分配库存异常");

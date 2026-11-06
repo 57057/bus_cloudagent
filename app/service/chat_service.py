@@ -128,7 +128,9 @@ async def stream_chat(query: str, user_id: str, session_id: str, *, user_context
             knowledge_tag = published_knowledge.fingerprint(await asyncio.to_thread(published_knowledge.snapshot))
         except Exception:
             knowledge_tag = None
-    cache_hit = await semantic_cache.get_cache(query, user_id)
+    # 运维答案依赖实时租约与运行证据，禁止由旧语义缓存直接回答。
+    operational = any(word in query.lower() for word in ("部署","项目","应用","日志","回滚","重启","健康","故障","deploy","restart","rollback","logs"))
+    cache_hit = None if operational else await semantic_cache.get_cache(query, user_id)
     if knowledge_tag is None or (knowledge_tag and cache_hit and not cache_hit.get("source", "").startswith(knowledge_tag + "|")):
         cache_hit = None
     action_previews = []

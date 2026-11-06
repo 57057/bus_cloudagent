@@ -11,6 +11,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import re
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -28,6 +29,8 @@ def main():
     with c, c.cursor() as cur:
         cur.execute('SHOW TABLES')
         for (table,) in cur.fetchall():
+            if re.match(r'^restore_[0-9a-f]{12}_',table):
+                continue  # verify_backup专用副本不是业务表，避免递归备份演练数据。
             if not table.replace('_', '').isalnum():
                 raise ValueError('Unexpected table name')
             cur.execute('SELECT COUNT(*) FROM `' + table + '`')
@@ -46,8 +49,15 @@ def main():
         dump = folder / 'business.sql'
         with dump.open('wb') as output:
             subprocess.run(['D:/mysql-5.7.24-winx64/bin/mysqldump.exe', '--defaults-extra-file=' + name,
-                '--single-transaction', '--hex-blob', '--default-character-set=utf8mb4', s.mysql_database], stdout=output, check=True)
+                '--single-transaction', '--hex-blob', '--default-character-set=utf8mb4', s.mysql_database,*manifest['tables']], stdout=output, check=True)
         manifest['sha256'] = hashlib.sha256(dump.read_bytes()).hexdigest()
+        from dotenv import dotenv_values
+        key_setting=os.getenv('APPLICATION_KEY_FILE') or dotenv_values(ROOT/'business-java/.env').get('APPLICATION_KEY_FILE') or 'runtime/application-secret.key'
+        key_path=Path(key_setting)
+        if not key_path.is_absolute():key_path=ROOT/key_path
+        if key_path.exists():
+            # 主密钥不随SQL复制，仅保存指纹。恢复前必须另行提供受控备份的原密钥。
+            manifest['application_key_sha256']=hashlib.sha256(key_path.read_bytes()).hexdigest()
         (folder / 'manifest.json').write_text(json.dumps(manifest, indent=2), encoding='utf-8')
         print('Backup:', folder)
     finally:

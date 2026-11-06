@@ -5,11 +5,14 @@ import static com.cloudagent.business.common.Values.*;
 
 import com.cloudagent.business.common.JsonCodec;
 import com.cloudagent.business.entity.PlatformProduct;
+import com.cloudagent.business.integration.CatalogCache;
 import com.cloudagent.business.repository.CatalogRepository;
 import com.cloudagent.business.repository.CatalogSearchRepository;
 import java.util.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * 产品目录、可售配置与价格规则的业务服务。 SPU 是“ECS 云服务器”这样的产品，SKU 是指定地域、CPU、内存等的一套可售规格。
@@ -22,18 +25,21 @@ public class CatalogService {
 
   private final CatalogRepository repository;
   private final CatalogSearchRepository search;
+  private final CatalogCache cache;
 
   /** 构造器：由Spring传入所需依赖，再保存为本对象的字段；Controller/Service通常不需要在业务代码中手动new。 */
   public CatalogService(
       JsonCodec json,
       BusinessEvents events,
       CatalogRepository repository,
-      CatalogSearchRepository search) {
+      CatalogSearchRepository search,
+      CatalogCache cache) {
     this.json = json;
     this.events = events;
 
     this.repository = repository;
     this.search = search;
+    this.cache = cache;
   }
 
   /** 动态组合受控筛选条件，先统计总数再分页查询；搜索值使用?绑定，排序只能从固定选项选择。 */
@@ -43,7 +49,15 @@ public class CatalogService {
     for (String key : List.of("cpu", "memory_gb", "min_price", "max_price"))
       if (!q.getOrDefault(key, "").isBlank())
         validated.put(key, Integer.toString(parameter(q, key, 0, 0, 100000000)));
-    return search.products(validated, page, size);
+    // 只将实际参与查询的字段写入稳定排序的键；忽略未知参数，归一化页码和默认排序。
+    Map<String, String> filters = new TreeMap<>();
+    for (String key :
+        List.of("keyword", "category", "region", "cpu", "memory_gb", "min_price", "max_price"))
+      if (!validated.getOrDefault(key, "").isBlank()) filters.put(key, validated.get(key));
+    String sort = validated.getOrDefault("sort", "name");
+    filters.put("sort", Set.of("price_asc", "price_desc").contains(sort) ? sort : "name");
+    String key = "products:" + page + ":" + size + ":" + json.json(filters);
+    return cache.read(key, () -> search.products(filters, page, size));
   }
 
   /** 解析查询字符串中的整数参数；缺省/空值使用默认值，非法数值由integer抛业务异常。 */
@@ -54,6 +68,11 @@ public class CatalogService {
 
   /** 通过MyBatis-Plus查询已上架产品；下架产品在公开接口中按不存在处理。 */
   public Object product(String id) {
+    return cache.read("product:" + id, () -> publicProduct(id));
+  }
+
+  /** 内部需要最新可见性时直接查库，不使用展示缓存。 */
+  private PlatformProduct publicProduct(String id) {
     var p = repository.findProduct(id);
     require(p != null && Boolean.TRUE.equals(p.active), 404, "NOT_FOUND", "商品不存在或已下架");
     return p;
@@ -61,7 +80,7 @@ public class CatalogService {
 
   /** 先确认产品公开可见，再列出其启用SKU，并计算每个SKU的可售库存。 */
   public Object skus(String id) {
-    product(id);
+    publicProduct(id);
     return repository.listActiveSkus(id);
   }
 
@@ -72,7 +91,7 @@ public class CatalogService {
         bool(sku.get("active"))
             && bool(sku.get("product_active"))
             && Set.of("ECS", "GPU", "RDS", "DISK").contains(text(sku, "category"))
-            && text(sku, "adapter").equals("SIMULATED"),
+            && Set.of("SIMULATED", "POOL").contains(text(sku, "adapter")),
         409,
         "SKU_UNAVAILABLE",
         "当前SKU不可购买");
@@ -132,6 +151,7 @@ public class CatalogService {
         "PRODUCT_SAVE",
         id,
         "原因：" + reason + "；前：" + json.json(before) + "；后：" + json.json(p));
+    invalidateAfterCommit();
     return p;
   }
 
@@ -165,14 +185,14 @@ public class CatalogService {
     require(periods.matches("(1|3|12)(,(1|3|12))*"), 400, "INVALID_INPUT", "首版周期为1/3/12个月");
     String images = input(d, "images", 255);
     require(
-        images.matches("(ubuntu-22|rocky-9)(,(ubuntu-22|rocky-9))*"),
+        images.matches("(ubuntu-22|rocky-9|windows-2022)(,(ubuntu-22|rocky-9|windows-2022))*"),
         400,
         "INVALID_INPUT",
         "镜像配置无效");
     int min = integer(d, "min_disk", 40, 500), max = integer(d, "max_disk", min, 500);
     String adapter = Objects.toString(d.get("adapter"), "SIMULATED");
     require(
-        Set.of("SIMULATED", "UNAVAILABLE").contains(adapter),
+        Set.of("SIMULATED", "UNAVAILABLE", "POOL").contains(adapter),
         400,
         "INVALID_INPUT",
         "暂只支持模拟供应商或不可售");
@@ -199,15 +219,32 @@ public class CatalogService {
         integer(d, "grace_days", 1, 30),
         integer(d, "refund_days", 0, 30));
     var saved = repository.findSku(id);
+    if (adapter.equals("POOL")) repository.refreshPoolCapacity(id);
     repository.insertPriceVersion(id(), id, version, json.json(saved), now());
     events.audit(
         a.id(), "SKU_SAVE", id, "原因：" + reason + "；前：" + json.json(old) + "；后：" + json.json(saved));
+    invalidateAfterCommit();
     return saved;
   }
 
   /** 提供公开目录选项。 */
   public Object regions() {
-    return repository.listRegions();
+    return cache.read("regions", () -> repository.listRegions());
+  }
+
+  /** 回滚不失效；提交后切换版本，防止“先删缓存、事务未提交”造成旧值重新回填。 */
+  private void invalidateAfterCommit() {
+    if (TransactionSynchronizationManager.isSynchronizationActive()) {
+      TransactionSynchronizationManager.registerSynchronization(
+          new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+              cache.invalidate();
+            }
+          });
+    } else {
+      cache.invalidate();
+    }
   }
 
   /** 提供公开目录选项。 */

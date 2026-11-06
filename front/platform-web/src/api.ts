@@ -1,4 +1,7 @@
+import { requestJson } from "./request";
 export type Row = Record<string, any>;
+declare global { interface Window { __CLOUDAGENT_DEPLOYMENT__?: {frontendOnly?:boolean; notice?:string; environmentLabel?:string} } }
+function requireBackend(){if(window.__CLOUDAGENT_DEPLOYMENT__?.frontendOnly)throw new Error('当前站点仅部署前端预览，业务后端尚未接入');}
 let accessToken = "";
 let refreshPromise: Promise<Row> | null = null;
 export function setToken(token: string) {
@@ -13,14 +16,14 @@ export function csrf() {
   );
 }
 export async function refresh(): Promise<Row> {
+  requireBackend();
   if (!refreshPromise)
-    refreshPromise = fetch("/api/auth/refresh", {
+    refreshPromise = requestJson("/api/auth/refresh", {
       method: "POST",
       credentials: "include",
       headers: { "X-CSRF-Token": csrf() },
-    })
-      .then(async (r) => {
-        const data = await r.json();
+    }, 15000)
+      .then(({ response: r, data }) => {
         if (!r.ok) throw new Error(data.message);
         setToken(data.data.access_token);
         return data.data;
@@ -37,12 +40,13 @@ export async function api(
   key?: string,
   retry = true,
 ): Promise<any> {
+  requireBackend();
   const headers: Record<string, string> = { "X-CSRF-Token": csrf() };
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
   if (key) headers["Idempotency-Key"] = key;
   if (data && !(data instanceof FormData))
     headers["Content-Type"] = "application/json";
-  const response = await fetch("/api" + path, {
+  const { response, data: result } = await requestJson("/api" + path, {
     method,
     credentials: "include",
     headers,
@@ -52,7 +56,7 @@ export async function api(
         : data instanceof FormData
           ? data
           : JSON.stringify(data),
-  });
+  }, path.startsWith("/auth/") ? 15000 : 30000);
   if (response.status === 401 && retry && !path.startsWith("/auth/")) {
     try {
       await refresh();
@@ -63,7 +67,6 @@ export async function api(
     }
     return api(path, method, data, key, false);
   }
-  const result = await response.json();
   if (!response.ok)
     throw new Error(
       `${result.message || "请求失败"}${result.requestId ? `（请求号 ${result.requestId.slice(0, 8)}）` : ""}`,
@@ -71,6 +74,7 @@ export async function api(
   return result.data;
 }
 export async function download(id: string) {
+  requireBackend();
   const response = await fetch(`/api/attachments/${id}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
@@ -88,6 +92,7 @@ export async function chat(
   signal: AbortSignal,
   receive: (event: Row) => void,
 ) {
+  requireBackend();
   await refresh();
   const response = await fetch("/api/chat", {
     method: "POST",

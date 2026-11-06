@@ -13,6 +13,7 @@ import java.util.*;
  */
 @org.springframework.stereotype.Service
 public class InternalToolService {
+  @org.springframework.beans.factory.annotation.Autowired private ApplicationService applications;
   private final BusinessEvents events;
 
   private final InternalToolRepository repository;
@@ -49,6 +50,25 @@ public class InternalToolService {
     int limit = a.containsKey("limit") ? integer(a, "limit", 1, 50) : 5;
     Object data =
         switch (tool) {
+          case "list_application_projects" ->
+              applications.projects(new AuthService.Actor(user, "USER", text(p, "auth_session")));
+          case "get_application_evidence" ->
+              applications.evidence(
+                  new AuthService.Actor(user, "USER", text(p, "auth_session")),
+                  input(a, "project_id", 64));
+          case "prepare_application_action" -> {
+            String kind = input(a, "kind", 20);
+            require(
+                Set.of("DEPLOY", "RESTART", "ROLLBACK", "LOGS").contains(kind),
+                400,
+                "ACTION_NOT_ALLOWED",
+                "应用操作未获准");
+            yield applications.prepare(
+                new AuthService.Actor(user, "USER", text(p, "auth_session")),
+                input(a, "project_id", 64),
+                new com.cloudagent.business.dto.ApplicationRequests.Plan(
+                    kind, Objects.toString(a.get("target_deployment_id"), null)));
+          }
           case "query_user_orders" -> repository.listUserOrders(user, limit);
           case "query_user_instances" -> repository.listUserInstances(user, limit);
           case "analyze_instance_usage" -> {

@@ -19,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class TradeService {
+  @org.springframework.beans.factory.annotation.Autowired private PoolService pool;
   private final JsonCodec json;
   private final BusinessEvents events;
 
@@ -237,6 +238,8 @@ public class TradeService {
               : q.get("unit_cents"),
           "PENDING");
     // 订单、库存、逐台子项与outbox事件处于同一事务；抛运行时异常时一起回滚。
+    if (text(sku, "adapter").equals("POOL") && text(q, "kind").equals("NEW_PURCHASE"))
+      pool.reserve(id);
     // HTTP响应成功只代表下单成功，不代表已付款或已开通。
     events.event("order:" + id, "ORDER_CREATED", Map.of("order_id", id));
     events.audit(a.id(), "ORDER_CREATED", id, "金额分：" + q.get("total_cents"));
@@ -275,6 +278,7 @@ public class TradeService {
           "INVENTORY_CONFLICT",
           "库存预留异常");
     repository.cancelItems(o.get("id"));
+    if (pool != null) pool.cancel(text(o, "id"));
     repository.closePayments(o.get("id"));
     marketing.release(o.get("id"));
   }

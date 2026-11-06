@@ -6,9 +6,31 @@ import sys
 import json
 import hashlib
 import shutil
+from urllib.parse import urlsplit, unquote
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+
+
+def redis_defaults(env, redis_url):
+    """Reuse the local Agent Redis connection unless Java-specific values override it.
+
+    Keep credentials in the child environment only; never log the URL/password.
+    """
+    url = urlsplit(env.get("REDIS_URL") or redis_url)
+    if url.scheme not in ("redis", "rediss"):
+        raise ValueError("Redis URL must use redis or rediss")
+    defaults = {
+        "REDIS_HOST": url.hostname or "127.0.0.1",
+        "REDIS_PORT": str(url.port or 6379),
+        "REDIS_USERNAME": unquote(url.username or ""),
+        "REDIS_PASSWORD": unquote(url.password or ""),
+        "BUSINESS_REDIS_DATABASE": url.path.lstrip("/") or "0",
+        "REDIS_SSL": str(url.scheme == "rediss").lower(),
+    }
+    for name, value in defaults.items():
+        env.setdefault(name, value)
+    return env
 
 
 def main():
@@ -19,6 +41,7 @@ def main():
     env.update({k:v for k,v in dotenv_values(ROOT / "business-java/.env").items() if v is not None and k not in env})
     for name in ("host", "port", "user", "password", "database"):
         env["MYSQL_" + name.upper()] = str(getattr(settings, "mysql_" + name))
+    redis_defaults(env, settings.redis_url)
     token_path = ROOT / "runtime/business-service.token"
     if not token_path.exists():
         import secrets

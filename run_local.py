@@ -95,7 +95,16 @@ def main():
                      "--basedir=D:/mysql-5.7.24-winx64", f"--datadir={RUNTIME / 'mysql-data'}",
                      "--bind-address=127.0.0.1", "--port=3307", "--log_syslog=0",
                      "--explicit_defaults_for_timestamp", "--console"], 3307)
+    # Java 商品目录也使用 Redis，因此仅业务模式同样启动它。
+    launch("redis", [str(RUNTIME / "redis/redis-server.exe"), str(RUNTIME / "redis/local.conf")], 6379)
     launch("business-java", [str(PYTHON), str(ROOT / "deploy/run_business.py")], 5000, env=env)
+    if (RUNTIME / "application-runners.json").exists():
+        try:
+            if not listening(2222):
+                subprocess.run([str(PYTHON),str(ROOT / "deploy/create_docker_vm.py")],check=True,timeout=45)
+            subprocess.run([str(PYTHON),str(ROOT / "deploy/start_application_runner.py")],check=True,timeout=30)
+        except (subprocess.SubprocessError,OSError):
+            print("Application Runner pending; transactions remain available. Retry deploy/start_application_runner.py.")
     node = shutil.which("node.exe")
     if not node:
         raise RuntimeError("node.exe not found")
@@ -105,7 +114,6 @@ def main():
     if args.business_only:
         print("React: http://127.0.0.1:5173/ ; Business API: http://127.0.0.1:5000/")
         return
-    launch("redis", [str(RUNTIME / "redis/redis-server.exe"), str(RUNTIME / "redis/local.conf")], 6379)
     launch("neo4j", ["D:/java/bin/java.exe", "-cp", str(NEO / "lib/*"),
                      "-Dbasedir=" + str(NEO), "org.neo4j.server.startup.Neo4jCommand", "console"],
            7687, env=env)

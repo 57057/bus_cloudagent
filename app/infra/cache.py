@@ -22,6 +22,9 @@ class SemanticCache:
         self.collection = "qa_hot_v2_" + self.settings.embedding_collection_suffix + "_" + revision
 
     async def initialize(self):
+        if not self.settings.vector_backend_enabled:
+            logger.info("Semantic cache explicitly disabled")
+            return
         try:
             from pymilvus import MilvusClient
             args = {"uri": f"http://{self.settings.milvus_host}:{self.settings.milvus_port}", "timeout": 10}
